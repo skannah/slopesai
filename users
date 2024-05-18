@@ -1,0 +1,20 @@
+def calculate_skiers_snowboarders(total_visitors, skier_percentage):
+    """
+    Calculates the number of skiers and snowboarders based on total visitors and skier percentage.
+    Args:
+        total_visitors (int): Total number of visitors.
+        skier_percentage (float): Percentage of visitors who are skiers (0.0 to 1.0).
+    Returns:
+        tuple: (skiers, snowboarders)
+    """
+    skiers = int(total_visitors * skier_percentage)
+    snowboarders = total_visitors - skiers
+    return skiers, snowboarders
+
+# Example usage
+total_visitors = 500  # Replace with the actual total number of visitors
+skier_percentage = 0.6  # Assume 60% are skiers
+skiers, snowboarders = calculate_skiers_snowboarders(total_visitors, skier_percentage)
+
+print(f"Number of skiers: {skiers}")
+print(f"Number of snowboarders: {snowboarders}")
