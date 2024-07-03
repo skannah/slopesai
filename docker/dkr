@@ -1,0 +1,69 @@
+#!/bin/bash
+# dkr - All-in-one script for docker command lines build|create|start|run|stop|remove. 
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+DOCKERFILE="dockerfile"
+DOCKERREPO=""
+IMAGETAG="sai"
+if [ -z "${DOCKERREPO}" ]; then
+    IMAGENAME="${IMAGETAG}"
+else
+    IMAGENAME="${DOCKERREPO}:${IMAGETAG}"
+fi
+CONTAINERNAME="sai"
+USERID=$(id -u)
+
+# Common functions 
+source "${SCRIPT_DIR}"/dkr_fn
+
+help() {
+    echo "dkr"
+    echo "All-in-one-script for docker command lines, build|create|start|run|stop|rm"
+    echo "Examples:"
+    echo "  ./dkr build"
+    echo "  ./dkr create"
+    echo "  ./dkr start"
+    echo "  ./dkr run (to run interactive bash shell)"
+    echo "  ./dkr run <tool_inside_container>"
+    echo "  ./dkr build; ./dkr create; ./dkr start; ./dkr run"
+    echo "  ./dkr all"
+    echo "  ./dkr stop"
+    echo "  ./dkr rm"
+}
+
+# Command line
+VERB=$1
+shift
+case ${VERB} in
+-h|--help|help)
+    help
+    ;;
+build)
+    build
+    ;;
+create)
+    create
+    ;;
+start)
+    start
+    ;;
+run)
+    run "$@"
+    ;;
+all)
+    build
+    create
+    start
+    run "$@"
+    ;;
+stop)
+    stop
+    ;;
+rm|remove)
+    remove
+    ;;
+*)
+    help
+    ;;
+esac

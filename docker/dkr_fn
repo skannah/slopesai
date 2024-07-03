@@ -1,0 +1,85 @@
+#!/bin/bash
+# All-in-one script for docker command lines build|create|start|run|stop|remove. 
+
+# Build docker images
+build() {
+  # OS and toolchains
+  docker build \
+    -f "${DOCKERFILE}" \
+    -t "${IMAGENAME}-system" \
+    --target "${IMAGENAME}-system" .
+
+  # Frameworks and libs
+  docker build \
+    -f "${DOCKERFILE}" \
+    -t "${IMAGENAME}-middleware" \
+    --target "${IMAGENAME}-middleware" .
+
+  # This adds you as the user inside the container.
+  docker build \
+    -f "${DOCKERFILE}" \
+    --build-arg ARG_USERID="${USERID}" \
+    --build-arg ARG_USER="${USER}" \
+    -t "${IMAGENAME}" \
+    --target "${IMAGENAME}" .
+}
+
+# Create container from image.
+create() {
+  # Make sure these are not being cached somehow. 
+  touch "${HOME}/.vimrc"
+  touch "${HOME}/.bashrc"
+  touch "${HOME}/"
+
+  # This mounts the home directory from the host.
+  docker create -it \
+    --name "${CONTAINERNAME}" \
+    --net host \
+    --privileged \
+    --shm-size 4G \
+    --user "${USER}" \
+    -v "${HOME}/:${HOME}" \
+    -v "${HOME}/.bashrc:${HOME}/.bashrc" \
+    -v "${HOME}/.bash_history:${HOME}/.bashrc_history" \
+    -v "${HOME}/.vimrc:${HOME}/.vimrc" \
+    -v /etc/hosts:/etc/hosts \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v /var/run/dbus:/var/run/dbus \
+    -e "DISPLAY=${DISPLAY}" \
+    -e CONTAINER_NAME="${CONTAINERNAME}" \
+    -h "${CONTAINERNAME}" "${IMAGENAME}"
+}
+
+# Start the container
+start() {
+  [ ! "$(docker ps -aq -f name=${CONTAINERNAME} -f status=running)" ] && docker start "${CONTAINERNAME}"
+}
+
+# Run a command line
+run() {
+  if [ "$1" == "server" ]; then
+    # Deployed release
+    docker run -d --restart unless-stopped ${SERVERARGS} --name "${CONTAINERNAME}" "${IMAGENAME}"
+  else
+    # Development container
+    [ ! "$(docker ps -aq -f name=${CONTAINERNAME} -f status=running)" ] && docker start "${CONTAINERNAME}" >/dev/null
+    if [ $# == 0 ]; then
+        docker exec -it -e "COLUMNS=$(tput cols)" -e "LINES=$(tput lines)" -w "$(pwd)" "${CONTAINERNAME}" bash "$@"
+    else
+        docker exec -it -e "COLUMNS=$(tput cols)" -e "LINES=$(tput lines)" -w "$(pwd)" "${CONTAINERNAME}" bash -c "$@"
+    fi
+  fi
+}
+
+# Stop the container
+stop() {
+  [ "$(docker ps -aq -f name=${CONTAINERNAME} -f status=running)" ] && docker stop "${CONTAINERNAME}" >/dev/null; 
+  docker rm "${CONTAINERNAME}" >/dev/null
+}
+
+# Cleanup
+remove() {
+  [ "$(docker ps -aq -f name=${CONTAINERNAME} -f status=running)" ] && docker stop $CONTAINERNAME
+  [ "$(docker ps -aq -f name=${CONTAINERNAME})" ] && docker rm $CONTAINERNAME
+  docker rmi -f $IMAGENAME
+}
