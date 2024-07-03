@@ -32,6 +32,8 @@ create() {
   touch "${HOME}/"
 
   # This mounts the home directory from the host.
+  # Also volume mount exclude ~/googlecloud which is already a symlink inside the container. 
+
   docker create -it \
     --name "${CONTAINERNAME}" \
     --net host \
@@ -39,6 +41,7 @@ create() {
     --shm-size 4G \
     --user "${USER}" \
     -v "${HOME}/:${HOME}" \
+    -v "${HOME}/googlecloud" \
     -v "${HOME}/.bashrc:${HOME}/.bashrc" \
     -v "${HOME}/.bash_history:${HOME}/.bashrc_history" \
     -v "${HOME}/.vimrc:${HOME}/.vimrc" \
