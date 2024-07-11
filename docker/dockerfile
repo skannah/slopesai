@@ -1,0 +1,140 @@
+# Development image, for use on x86
+FROM ubuntu:24.04 AS sai-system
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=teletype
+
+# Linux
+RUN apt-get update && apt-get install -y \
+	sudo apt-utils aptitude software-properties-common lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Linux
+RUN apt-get update && apt-get install -y \
+    git git-lfs vim strace time syslinux manpages manpages-dev \
+    iproute2 bridge-utils iputils-ping net-tools arping ethtool dnsutils \
+    gdb build-essential ccache cmake \
+    zip unzip bzip2 wget curl gnupg rsync xz-utils \
+    ninja-build ca-certificates check \
+    flex bison gperf \
+    libffi-dev libssl-dev dfu-util libusb-1.0-0 \
+    libbsd-dev libffi-dev libglib2.0-0 libncurses-dev libpixman-1-0 \
+    libsdl2-2.0-0 libslirp0 libusb-1.0-0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 3.12
+RUN add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y python3.12
+
+# Python, PIP
+RUN apt-get update && apt-get install -y \
+    python3-pip libffi-dev python3-venv python3-setuptools python3-yaml \
+    python3-jinja2 python3-jsonschema \
+    && rm -rf /var/lib/apt/lists/*
+
+# Server Components
+RUN apt-get update && apt-get install -y \
+    nginx libfcgi spawn-fcgi libpq-dev postgresql-client redis \
+    mosquitto mosquitto-clients \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python Packages
+RUN rm /usr/lib/python3.12/EXTERNALLY-MANAGED
+COPY requirements_sys.txt requirements_sys.txt
+RUN pip3 install --no-cache-dir -r requirements_sys.txt
+
+
+#-------------------------
+# Starts a new docker image
+FROM gh2-system AS sai-middleware
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=teletype
+
+# Python Packages, includes Flask, Quart  
+COPY requirements_mw1.txt requirements_mw1.txt
+RUN pip3 install --no-cache-dir -r requirements_mw1.txt
+
+# Plotly
+RUN pip3 install --no-cache-dir --trusted-host pypi.python.org django-plotly-dash
+
+# Python Web, Django
+RUN apt-get update && apt-get install -y \
+    python3-django \
+    && pip3 install --no-cache-dir django djangorestframework \
+    && rm -rf /var/lib/apt/lists/*
+
+# Google Cloud
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
+    tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+    sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && apt-get update -y \
+    && apt-get install -y google-cloud-sdk
+
+# Google Cloud
+# Create a symlink.  This is also volume mounted by docker create.
+RUN mkdir -p /opt/googlecloud; mkdir -p /opt/googlecloud/gcp; \
+    chown -R ubuntu:ubuntu /opt/googlecloud; \
+    chown -R ubuntu:ubuntu /opt/googlecloud/gcp
+    
+
+
+#-------------------------
+# Starts a new docker image
+FROM sai-middleware AS sai
+
+ARG ARG_USERID
+ARG ARG_USER
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=teletype
+
+RUN pip3 freeze > requirements_before.txt
+
+# For software development, your home directory is mounted in the container.
+# Inside the container, the creation of files must be by the same userid as the host.
+# Specifically, the userid 1000 must be the same on the host and in the container. 
+# Otherwise file permissions become a mess.  I have userid 1000 on my host.
+# So user "ubuntu" needs to be deleted from inside the container. 
+
+RUN deluser --remove-home ubuntu
+RUN useradd -m $ARG_USER -u $ARG_USERID -s /bin/bash && \
+    passwd -d $ARG_USER && \
+    usermod -aG sudo $ARG_USER && \
+    usermod -aG dialout $ARG_USER
+
+USER $ARG_USER
+
+ENV HOME=/home/$ARG_USER
+WORKDIR /home/$ARG_USER/
+
+# Create a symlink.  This is also volume mounted by docker create.
+RUN ln -s /opt/googlecloud /home/$ARG_USER/googlecloud;
+
+# Google Cloud
+# Create python virtual environment with the pip packages.
+# After that, add all other packages in to that environment. 
+RUN bash -c "\
+    cd /home/$ARG_USER/googlecloud/gcp; \
+    python3 -m venv env; \
+    source env/bin/activate; \
+    gcloud services enable pubsub.googleapis.com; \
+    pip3 install --upgrade google-cloud-pubsub; \
+    pip3 install --no-cache-dir -r /requirements_sys.txt; \
+    pip3 install --no-cache-dir -r /requirements_mw1.txt; \
+    pip3 install --no-cache-dir --trusted-host pypi.python.org django-plotly-dash; \
+    apt-get update && apt-get install -y python3-django; \
+    pip3 install --no-cache-dir django djangorestframework \    
+    "
+
+# At any time, pip3 freeze > requirements_final.txt
+# Then diff with requirements_before.txt to make sure you got it all. 
+
+# Bash environment upon entry. This activates the python virtual environment.
+USER root
+COPY bash.bashrc /etc/bash.bashrc
+RUN chmod a+rwx /etc/bash.bashrc
+
+# Now, when inside the container, `pip3 list` to check that you 
+# have google-api-core and other packages you need.
+
+CMD ["bash"]
